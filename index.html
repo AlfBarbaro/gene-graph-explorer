@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gene Dependency Graph Explorer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg:#06080d; --surface:#0d1117; --surface2:#161b22; --surface3:#1c2333;
+    --border:#21262d; --border2:#30363d;
+    --text:#e6edf3; --text2:#8b949e; --text3:#6e7681;
+    --accent:#58a6ff; --hub-color:#f0883e; --spoke-color:#8b949e; --purple:#bc8cff;
+  }
+  body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text); height:100vh; overflow:hidden; }
+  .app { display:grid; grid-template-columns:370px 1fr; grid-template-rows:50px 1fr; height:100vh; }
+
+  .header { grid-column:1/-1; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:0 20px; }
+  .header-left { display:flex; align-items:center; gap:10px; }
+  .logo { width:26px; height:26px; border-radius:5px; background:linear-gradient(135deg,var(--hub-color),var(--accent)); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#fff; }
+  .header h1 { font-size:14px; font-weight:600; }
+  .header h1 span { color:var(--text2); font-weight:400; }
+  .stats { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text3); display:flex; gap:10px; }
+  .stat-pill { padding:2px 8px; background:var(--surface2); border-radius:4px; border:1px solid var(--border); }
+  .stat-pill b { color:var(--text2); }
+
+  .sidebar { background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+  .section { padding:12px 14px; border-bottom:1px solid var(--border); }
+  .section-title { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text3); margin-bottom:8px; }
+
+  .upload-area { border:1.5px dashed var(--border2); border-radius:8px; padding:14px; text-align:center; cursor:pointer; transition:all .2s; background:var(--surface2); }
+  .upload-area:hover { border-color:var(--accent); }
+  .upload-area p { font-size:12px; color:var(--text2); }
+  .upload-area .icon { font-size:18px; margin-bottom:4px; opacity:.7; }
+  .upload-area input { display:none; }
+  .upload-area.loaded { border-color:#3fb950; border-style:solid; }
+
+  .search-wrap { position:relative; }
+  .search-box { width:100%; padding:7px 12px 7px 30px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; font-family:'JetBrains Mono',monospace; outline:none; }
+  .search-box:focus { border-color:var(--accent); }
+  .search-box::placeholder { color:var(--text3); }
+  .search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text3); font-size:12px; pointer-events:none; }
+
+  .view-tabs { display:flex; gap:3px; background:var(--surface2); border-radius:6px; padding:3px; }
+  .view-tab { flex:1; padding:5px 6px; border-radius:4px; border:none; background:transparent; color:var(--text3); font-size:11px; font-weight:500; cursor:pointer; font-family:'DM Sans',sans-serif; }
+  .view-tab.active { background:var(--surface3); color:var(--text); }
+
+  .query-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+  .query-btn { padding:6px 8px; background:var(--surface2); border:1px solid var(--border); border-radius:5px; color:var(--text2); font-size:11px; font-weight:500; cursor:pointer; text-align:left; font-family:'DM Sans',sans-serif; display:flex; align-items:center; gap:5px; }
+  .query-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--text); }
+  .query-btn:disabled { opacity:.3; cursor:not-allowed; }
+  .n-input { width:38px; padding:2px 4px; background:var(--surface3); border:1px solid var(--border2); border-radius:3px; color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:10px; text-align:center; outline:none; margin-left:auto; -moz-appearance:textfield; }
+  .n-input::-webkit-outer-spin-button,.n-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .n-input:focus { border-color:var(--accent); }
+
+  .filter-row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .filter-row label { font-size:11px; color:var(--text3); white-space:nowrap; }
+  .filter-row input[type="range"] { flex:1; accent-color:var(--accent); }
+  .filter-val { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--accent); min-width:40px; text-align:right; }
+
+  .results-container { flex:1; display:flex; flex-direction:column; min-height:0; }
+  .results { flex:1; overflow-y:auto; padding:6px 10px; font-size:12px; }
+  .results::-webkit-scrollbar { width:5px; }
+  .results::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
+
+  .result-item { padding:6px 8px; margin-bottom:2px; border-radius:5px; background:var(--surface2); border:1px solid transparent; cursor:pointer; display:flex; align-items:center; gap:6px; }
+  .result-item:hover { border-color:var(--border2); background:var(--surface3); }
+  .gene-name { font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--accent); font-size:11px; }
+  .metric { color:var(--text3); font-family:'JetBrains Mono',monospace; font-size:10px; margin-left:auto; }
+  .tag { display:inline-block; padding:1px 5px; border-radius:3px; font-size:9px; font-weight:600; text-transform:uppercase; }
+  .tag.hub { background:rgba(240,136,62,.15); color:var(--hub-color); }
+  .tag.spoke { background:rgba(139,148,158,.15); color:var(--spoke-color); }
+  .result-header { font-weight:600; color:var(--text2); margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .arrow-sep { color:var(--text3); }
+  .empty-state { text-align:center; padding:30px 16px; color:var(--text3); font-size:12px; }
+  .empty-state .icon { font-size:24px; margin-bottom:6px; opacity:.5; }
+
+  .graph-area { position:relative; overflow:hidden; background:var(--bg); }
+  .graph-area canvas { display:block; touch-action:none; }
+  .tooltip { position:absolute; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; padding:10px 12px; pointer-events:none; z-index:100; font-size:11px; max-width:240px; box-shadow:0 8px 24px rgba(0,0,0,.5); display:none; }
+  .tt-gene { font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--accent); margin-bottom:4px; font-size:12px; }
+  .tt-row { color:var(--text2); line-height:1.6; }
+  .graph-info { position:absolute; bottom:10px; left:10px; }
+  .info-chip { padding:4px 10px; background:rgba(13,17,23,.85); border:1px solid var(--border); border-radius:4px; font-size:10px; color:var(--text3); font-family:'JetBrains Mono',monospace; }
+
+  .degree-bar { height:3px; border-radius:2px; background:var(--border); margin:1px 8px 4px; overflow:hidden; }
+  .degree-bar-fill { height:100%; border-radius:2px; }
+  .degree-bar-fill.out { background:var(--hub-color); }
+  .degree-bar-fill.in { background:var(--purple); }
+
+  .gene-detail { padding:10px; background:var(--surface2); border-radius:6px; margin-bottom:6px; border:1px solid var(--border); }
+  .gene-detail-name { font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:8px; }
+  .gene-detail-stats { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:6px; }
+  .gd-stat { padding:4px 7px; background:var(--surface); border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:10px; }
+  .gd-stat .gd-label { color:var(--text3); display:block; margin-bottom:1px; }
+  .gd-stat .gd-val { font-weight:600; font-size:12px; }
+  .gd-stat .gd-val.out-c { color:var(--hub-color); }
+  .gd-stat .gd-val.in-c { color:var(--purple); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-left"><div class="logo">G</div><h1>Gene Graph <span>Explorer</span></h1></div>
+    <div class="stats" id="headerStats"></div>
+  </div>
+  <div class="sidebar">
+    <div class="section">
+      <div class="section-title">Data</div>
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📂</div><p>Drop edges CSV or click</p>
+        <input type="file" id="fileInput" accept=".csv">
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Search</div>
+      <div class="search-wrap"><span class="search-icon">⌕</span>
+        <input type="text" class="search-box" id="searchBox" placeholder="Gene name..." disabled>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">View</div>
+      <div class="view-tabs">
+        <button class="view-tab active" data-view="ego">Ego Graph</button>
+        <button class="view-tab" data-view="radial">Hub Radial</button>
+        <button class="view-tab" data-view="full">Full Graph</button>
+      </div>
+      <div class="filter-row" id="filterRow" style="display:none">
+        <label>Min weight</label>
+        <input type="range" id="weightFilter" min="0" max="100" value="0">
+        <span class="filter-val" id="weightVal">0.00</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Explore</div>
+      <div class="query-grid">
+        <button class="query-btn" onclick="queryHubs(getN('nHubs'))" disabled id="qHubs"><span class="qicon">◉</span> Top Hubs<input type="number" class="n-input" id="nHubs" value="15" min="1" max="200" onclick="event.stopPropagation()"></button>
+        <button class="query-btn" onclick="querySpokes(getN('nSpokes'))" disabled id="qSpokes"><span class="qicon">◎</span> Top Spokes<input type="number" class="n-input" id="nSpokes" value="20" min="1" max="200" onclick="event.stopPropagation()"></button>
+        <button class="query-btn" onclick="queryTopEdges(getN('nEdges'))" disabled id="qEdges"><span class="qicon">↗</span> Top Edges<input type="number" class="n-input" id="nEdges" value="25" min="1" max="200" onclick="event.stopPropagation()"></button>
+        <button class="query-btn" onclick="queryStats()" disabled id="qStats"><span class="qicon">≡</span> Statistics</button>
+      </div>
+    </div>
+    <div class="results-container">
+      <div class="results" id="results">
+        <div class="empty-state"><div class="icon">🧬</div><p>Load edges CSV to explore</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="graph-area" id="graphArea">
+    <canvas id="canvas"></canvas>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="graph-info" id="graphInfo"></div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let G={nodes:{},edges:[],adjOut:{},adjIn:{}};
+let hubThreshold=0, maxOutW=1, maxInW=1, maxEdgeW=1;
+let selectedNode=null, hoverNode=null;
+let currentView='ego';
+let canvas, ctx, cW=0, cH=0;
+// Transform: screen = world * scale + offset
+let camX=0, camY=0, camScale=1;
+let dragging=false, dragLastX=0, dragLastY=0;
+let worldPositions={}; // node name -> {x,y} in world coords
+let egoMeta=null, radialMeta=null, fullActiveNames=[];
+let highlightedNodes=new Set(), highlightedEdges=new Set();
+let weightFilterValue=0, filteredEdges=[];
+
+// ── Canvas ──
+function initCanvas(){
+  canvas=document.getElementById('canvas');
+  ctx=canvas.getContext('2d');
+  sizeCanvas();
+  window.addEventListener('resize',()=>{sizeCanvas();draw();});
+}
+function sizeCanvas(){
+  const c=document.getElementById('graphArea');
+  cW=c.clientWidth; cH=c.clientHeight;
+  canvas.width=cW; canvas.height=cH;
+}
+
+// ── Coordinate transforms ──
+function worldToScreen(wx,wy){ return { x: wx*camScale+camX, y: wy*camScale+camY }; }
+function screenToWorld(sx,sy){ return { x: (sx-camX)/camScale, y: (sy-camY)/camScale }; }
+
+function fitToWorld(){
+  // Fit all worldPositions into the canvas with padding
+  const pts=Object.entries(worldPositions).filter(([k])=>k[0]!=='_').map(([,v])=>v);
+  if(!pts.length) return;
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  pts.forEach(p=>{x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);});
+  const pad=50;
+  const ww=x1-x0||1, hh=y1-y0||1;
+  camScale=Math.min((cW-pad*2)/ww,(cH-pad*2)/hh);
+  camX=cW/2-((x0+x1)/2)*camScale;
+  camY=cH/2-((y0+y1)/2)*camScale;
+}
+
+// ── CSV ──
+document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files[0])loadCSV(e.target.files[0]);});
+const ua=document.getElementById('uploadArea');
+ua.addEventListener('dragover',e=>{e.preventDefault();ua.style.borderColor='var(--accent)';});
+ua.addEventListener('dragleave',()=>ua.style.borderColor='');
+ua.addEventListener('drop',e=>{e.preventDefault();ua.style.borderColor='';if(e.dataTransfer.files[0])loadCSV(e.dataTransfer.files[0]);});
+
+function loadCSV(file){
+  const r=new FileReader();
+  r.onload=e=>{
+    parseCSV(e.target.result);
+    enableUI();
+    ua.classList.add('loaded');
+    ua.querySelector('p').textContent='✓ '+file.name;
+    const top=Object.entries(G.nodes).sort((a,b)=>b[1].outW-a[1].outW)[0];
+    if(top) selectNode(top[0]);
+  };
+  r.readAsText(file);
+}
+
+function parseCSV(text){
+  G={nodes:{},edges:[],adjOut:{},adjIn:{}};
+  const lines=text.trim().split('\n');
+  for(let i=1;i<lines.length;i++){
+    const p=lines[i].split(',');
+    const s=p[0].trim(),t=p[1].trim(),w=parseFloat(p[2]);
+    if(!s||!t||isNaN(w))continue;
+    const idx=G.edges.length;
+    G.edges.push({source:s,target:t,weight:w,idx});
+    if(!G.nodes[s])G.nodes[s]={outW:0,inW:0,outDeg:0,inDeg:0};
+    if(!G.nodes[t])G.nodes[t]={outW:0,inW:0,outDeg:0,inDeg:0};
+    G.nodes[s].outW+=w;G.nodes[s].outDeg++;
+    G.nodes[t].inW+=w;G.nodes[t].inDeg++;
+    if(!G.adjOut[s])G.adjOut[s]=[];
+    if(!G.adjIn[t])G.adjIn[t]=[];
+    G.adjOut[s].push({target:t,weight:w});
+    G.adjIn[t].push({source:s,weight:w});
+  }
+  const ow=Object.values(G.nodes).map(n=>n.outW).sort((a,b)=>a-b);
+  hubThreshold=ow[Math.floor(ow.length*0.9)]||0;
+  maxOutW=Math.max(...ow,0.001);
+  maxInW=Math.max(...Object.values(G.nodes).map(n=>n.inW),0.001);
+  maxEdgeW=Math.max(...G.edges.map(e=>e.weight),0.001);
+  const sorted=Object.entries(G.nodes).sort((a,b)=>b[1].outW-a[1].outW);
+  sorted.forEach(([name,data],i)=>{data.role=data.outW>=hubThreshold?'hub':'spoke';data.rank=i+1;data.name=name;});
+  filteredEdges=[...G.edges];
+  const nN=Object.keys(G.nodes).length,nE=G.edges.length,nH=Object.values(G.nodes).filter(n=>n.role==='hub').length;
+  document.getElementById('headerStats').innerHTML=
+    `<span class="stat-pill"><b>${nN}</b> nodes</span><span class="stat-pill"><b>${nE}</b> edges</span><span class="stat-pill"><b>${nH}</b> hubs</span>`;
+}
+
+function enableUI(){
+  document.getElementById('searchBox').disabled=false;
+  document.querySelectorAll('.query-btn').forEach(b=>b.disabled=false);
+}
+
+// ── View switching ──
+document.querySelectorAll('.view-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>setView(tab.dataset.view));
+});
+function setView(v){
+  currentView=v;
+  document.querySelectorAll('.view-tab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
+  document.getElementById('filterRow').style.display=v==='full'?'flex':'none';
+  if(v==='ego'){
+    const n=selectedNode||Object.entries(G.nodes).sort((a,b)=>b[1].outW-a[1].outW)[0]?.[0];
+    if(n){selectedNode=n;layoutEgo(n);}
+    setInfo('Scroll to zoom · Drag to pan · Click nodes to explore');
+  }else if(v==='radial'){
+    layoutRadial();
+    setInfo('Scroll to zoom · Drag to pan · Click hub nodes');
+  }else{
+    layoutFull();
+    setInfo('Scroll to zoom · Drag to pan · Double-click to reset');
+  }
+  draw();
+}
+function setInfo(t){document.getElementById('graphInfo').innerHTML=`<div class="info-chip">${t}</div>`;}
+
+// ── LAYOUT: Ego ──
+function layoutEgo(center){
+  worldPositions={};
+  const data=G.nodes[center]; if(!data)return;
+  const downstream=(G.adjOut[center]||[]).sort((a,b)=>b.weight-a.weight);
+  const upstream=(G.adjIn[center]||[]).sort((a,b)=>b.weight-a.weight);
+  const maxN=35;
+  const dShow=downstream.slice(0,maxN), uShow=upstream.slice(0,maxN);
+
+  worldPositions[center]={x:0,y:0};
+  const R=250;
+  dShow.forEach((e,i)=>{
+    const arc=Math.min(Math.PI*1.3,dShow.length*0.11);
+    const a=-arc/2+(dShow.length>1?i/(dShow.length-1)*arc:0);
+    worldPositions[e.target]={x:Math.cos(a)*R, y:Math.sin(a)*R};
+  });
+  uShow.forEach((e,i)=>{
+    const arc=Math.min(Math.PI*1.3,uShow.length*0.11);
+    const a=Math.PI-arc/2+(uShow.length>1?i/(uShow.length-1)*arc:0);
+    worldPositions[e.source]={x:Math.cos(a)*R, y:Math.sin(a)*R};
+  });
+  egoMeta={center,dShow,uShow,downstream,upstream};
+  fitToWorld();
+}
+
+// ── LAYOUT: Radial ──
+function layoutRadial(){
+  worldPositions={};
+  const hubs=Object.entries(G.nodes).filter(([,d])=>d.role==='hub').sort((a,b)=>b[1].outW-a[1].outW).slice(0,12);
+  const R=250;
+  hubs.forEach(([name,data],i)=>{
+    const a=(i/hubs.length)*Math.PI*2-Math.PI/2;
+    const hx=Math.cos(a)*R, hy=Math.sin(a)*R;
+    worldPositions[name]={x:hx,y:hy};
+    const tgts=(G.adjOut[name]||[]).sort((a,b)=>b.weight-a.weight).slice(0,6);
+    const sR=55+data.outDeg*1.2;
+    tgts.forEach((e,j)=>{
+      const sa=a-0.3+(tgts.length>1?j/(tgts.length-1)*0.6:0);
+      worldPositions[e.target]={x:hx+Math.cos(sa)*sR, y:hy+Math.sin(sa)*sR};
+    });
+  });
+  radialMeta={hubs};
+  fitToWorld();
+}
+
+// ── LAYOUT: Full ──
+function layoutFull(){
+  filteredEdges=G.edges.filter(e=>e.weight>=weightFilterValue);
+  const active=new Set();
+  filteredEdges.forEach(e=>{active.add(e.source);active.add(e.target);});
+  const names=[...active]; const N=names.length;
+  if(!N){worldPositions={};return;}
+
+  worldPositions={};
+  names.forEach((n,i)=>{
+    const a=(i/N)*Math.PI*2+Math.random()*0.3;
+    const sp=G.nodes[n].role==='hub'?200:500;
+    worldPositions[n]={x:Math.cos(a)*sp*(0.5+Math.random()*0.5),y:Math.sin(a)*sp*(0.5+Math.random()*0.5)};
+  });
+
+  const k=Math.sqrt(1e6/N)*0.6;
+  const iters=Math.min(180,40+N);
+  for(let it=0;it<iters;it++){
+    const d={};names.forEach(n=>d[n]={x:0,y:0});
+    if(N<300){
+      for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+        const a=names[i],b=names[j];
+        let dx=worldPositions[a].x-worldPositions[b].x,dy=worldPositions[a].y-worldPositions[b].y;
+        let dist=Math.sqrt(dx*dx+dy*dy)||0.01,f=(k*k)/dist;
+        d[a].x+=(dx/dist)*f;d[a].y+=(dy/dist)*f;
+        d[b].x-=(dx/dist)*f;d[b].y-=(dy/dist)*f;
+      }
+    }else{
+      for(let i=0;i<N;i++){const a=names[i];for(let s=0;s<40;s++){
+        const j=Math.floor(Math.random()*N);if(j===i)continue;const b=names[j];
+        let dx=worldPositions[a].x-worldPositions[b].x,dy=worldPositions[a].y-worldPositions[b].y;
+        let dist=Math.sqrt(dx*dx+dy*dy)||0.01,f=(k*k)/dist*(N/40);
+        d[a].x+=(dx/dist)*f;d[a].y+=(dy/dist)*f;
+      }}
+    }
+    filteredEdges.forEach(e=>{
+      if(!worldPositions[e.source]||!worldPositions[e.target])return;
+      let dx=worldPositions[e.target].x-worldPositions[e.source].x,dy=worldPositions[e.target].y-worldPositions[e.source].y;
+      let dist=Math.sqrt(dx*dx+dy*dy)||0.01,f=(dist*dist)/k*(0.3+e.weight*0.7);
+      d[e.source].x+=(dx/dist)*f;d[e.source].y+=(dy/dist)*f;
+      d[e.target].x-=(dx/dist)*f;d[e.target].y-=(dy/dist)*f;
+    });
+    names.forEach(n=>{
+      let dx=-worldPositions[n].x,dy=-worldPositions[n].y;
+      let dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+      const gf=G.nodes[n].role==='hub'?1.5:0.3;
+      d[n].x+=(dx/dist)*gf;d[n].y+=(dy/dist)*gf;
+    });
+    const temp=80*(1-it/iters);
+    names.forEach(n=>{
+      let dx=d[n].x,dy=d[n].y,dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+      let cap=Math.min(dist,temp);
+      worldPositions[n].x+=(dx/dist)*cap;worldPositions[n].y+=(dy/dist)*cap;
+    });
+  }
+  fullActiveNames=names;
+  fitToWorld();
+}
+
+// ══════════════════════════════════
+//  DRAWING — everything uses world coords + camera transform
+// ══════════════════════════════════
+function draw(){
+  ctx.clearRect(0,0,cW,cH);
+  ctx.save();
+  ctx.translate(camX,camY);
+  ctx.scale(camScale,camScale);
+
+  if(currentView==='ego') drawEgo();
+  else if(currentView==='radial') drawRadial();
+  else drawFullGraph();
+
+  ctx.restore();
+}
+
+function drawEgo(){
+  if(!egoMeta)return;
+  const {center,dShow,uShow,downstream,upstream}=egoMeta;
+  const cp=worldPositions[center]; if(!cp)return;
+
+  // Edges
+  dShow.forEach(e=>{const p=worldPositions[e.target];if(p)drawCurve(cp,p,e.weight,1);});
+  uShow.forEach(e=>{const p=worldPositions[e.source];if(p)drawCurve(p,cp,e.weight,-1);});
+
+  // Neighbor nodes
+  const allN=new Set([...dShow.map(e=>e.target),...uShow.map(e=>e.source)]);
+  allN.forEach(name=>{
+    if(name===center)return;
+    const nd=G.nodes[name],p=worldPositions[name]; if(!p)return;
+    const r=nd.role==='hub'?6:4;
+    const isDown=dShow.some(e=>e.target===name);
+    ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    ctx.fillStyle=nd.role==='hub'?'#f0883e':(isDown?'rgba(88,166,255,0.7)':'rgba(188,140,255,0.7)');
+    ctx.fill();
+    if(hoverNode===name){ctx.strokeStyle='#fff';ctx.lineWidth=1.5/camScale;ctx.stroke();}
+    const fs=Math.max(7,Math.min(11,10));
+    ctx.font=`${nd.role==='hub'?'600':'400'} ${fs}px 'JetBrains Mono',monospace`;
+    ctx.fillStyle='rgba(230,237,243,0.85)';
+    ctx.textAlign=isDown?'left':'right';
+    ctx.fillText(name,isDown?p.x+r+4:p.x-r-4,p.y+3);
+  });
+
+  // Center glow + node
+  const cR=12;
+  const data=G.nodes[center];
+  const gr=ctx.createRadialGradient(cp.x,cp.y,0,cp.x,cp.y,cR*3);
+  gr.addColorStop(0,data.role==='hub'?'rgba(240,136,62,0.25)':'rgba(88,166,255,0.25)');
+  gr.addColorStop(1,'transparent');
+  ctx.beginPath();ctx.arc(cp.x,cp.y,cR*3,0,Math.PI*2);ctx.fillStyle=gr;ctx.fill();
+  ctx.beginPath();ctx.arc(cp.x,cp.y,cR,0,Math.PI*2);
+  ctx.fillStyle=data.role==='hub'?'#f0883e':'#58a6ff';ctx.fill();
+  ctx.strokeStyle='#fff';ctx.lineWidth=2/camScale;ctx.stroke();
+  ctx.font=`700 13px 'JetBrains Mono',monospace`;ctx.fillStyle='#fff';ctx.textAlign='center';
+  ctx.fillText(center,cp.x,cp.y-cR-6);
+
+  // Labels
+  ctx.font=`600 9px 'DM Sans',sans-serif`;ctx.fillStyle='rgba(230,237,243,0.25)';
+  if(dShow.length){ctx.textAlign='center';ctx.fillText(`DOWNSTREAM (${downstream.length})`,180,-230);}
+  if(uShow.length){ctx.textAlign='center';ctx.fillText(`UPSTREAM (${upstream.length})`,-180,-230);}
+}
+
+function drawRadial(){
+  if(!radialMeta)return;
+  const {hubs}=radialMeta;
+
+  hubs.forEach(([name])=>{
+    const hp=worldPositions[name];if(!hp)return;
+    (G.adjOut[name]||[]).sort((a,b)=>b.weight-a.weight).slice(0,6).forEach(e=>{
+      const tp=worldPositions[e.target];if(!tp)return;
+      const alpha=0.08+(e.weight/maxEdgeW)*0.3;
+      ctx.beginPath();ctx.moveTo(hp.x,hp.y);ctx.lineTo(tp.x,tp.y);
+      ctx.strokeStyle=`rgba(88,166,255,${alpha})`;ctx.lineWidth=0.5+(e.weight/maxEdgeW)*2;ctx.stroke();
+      ctx.beginPath();ctx.arc(tp.x,tp.y,3,0,Math.PI*2);ctx.fillStyle='rgba(139,148,158,0.5)';ctx.fill();
+      ctx.font=`300 8px 'JetBrains Mono',monospace`;ctx.fillStyle='rgba(230,237,243,0.4)';ctx.textAlign='center';
+      ctx.fillText(e.target,tp.x,tp.y-5);
+    });
+  });
+
+  // Hub-hub edges
+  hubs.forEach(([name])=>{(G.adjOut[name]||[]).forEach(e=>{
+    if(worldPositions[e.target]&&hubs.some(([h])=>h===e.target)){
+      const p1=worldPositions[name],p2=worldPositions[e.target];
+      ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
+      ctx.strokeStyle=`rgba(240,136,62,${0.1+(e.weight/maxEdgeW)*0.4})`;
+      ctx.lineWidth=1+(e.weight/maxEdgeW)*3;ctx.stroke();
+    }
+  });});
+
+  // Hub nodes
+  hubs.forEach(([name,data])=>{
+    const p=worldPositions[name];if(!p)return;
+    const r=7+(data.outW/maxOutW)*9;
+    const gr=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r*2.5);
+    gr.addColorStop(0,'rgba(240,136,62,0.2)');gr.addColorStop(1,'transparent');
+    ctx.beginPath();ctx.arc(p.x,p.y,r*2.5,0,Math.PI*2);ctx.fillStyle=gr;ctx.fill();
+    ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fillStyle='#f0883e';ctx.fill();
+    if(selectedNode===name||hoverNode===name){ctx.strokeStyle='#fff';ctx.lineWidth=2/camScale;ctx.stroke();}
+    ctx.font=`600 11px 'JetBrains Mono',monospace`;ctx.fillStyle='#e6edf3';ctx.textAlign='center';
+    ctx.fillText(name,p.x,p.y-r-5);
+    ctx.font=`400 8px 'JetBrains Mono',monospace`;ctx.fillStyle='rgba(139,148,158,0.6)';
+    ctx.fillText(`out:${data.outDeg}`,p.x,p.y+r+10);
+  });
+
+  ctx.font=`600 9px 'DM Sans',sans-serif`;ctx.fillStyle='rgba(230,237,243,0.12)';ctx.textAlign='center';
+  ctx.fillText('HUB-AND-SPOKE TOPOLOGY',0,-5);
+}
+
+function drawFullGraph(){
+  const hasHL=highlightedNodes.size>0;
+  filteredEdges.forEach(e=>{
+    const p1=worldPositions[e.source],p2=worldPositions[e.target];if(!p1||!p2)return;
+    const isHL=highlightedEdges.has(e.idx);
+    ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
+    if(hasHL){
+      ctx.strokeStyle=isHL?'rgba(88,166,255,0.6)':'rgba(33,38,45,0.15)';
+      ctx.lineWidth=isHL?Math.max(0.5,e.weight*4):0.15;
+    }else{
+      ctx.strokeStyle=`rgba(88,166,255,${0.03+(e.weight/maxEdgeW)*0.1})`;
+      ctx.lineWidth=Math.max(0.2,(e.weight/maxEdgeW)*1.5);
+    }
+    ctx.stroke();
+  });
+
+  Object.entries(G.nodes).forEach(([name,data])=>{
+    const p=worldPositions[name];if(!p)return;
+    const isHL=highlightedNodes.has(name),isSel=selectedNode===name,isHov=hoverNode===name;
+    const r=data.role==='hub'?3+Math.sqrt(data.outW/maxOutW)*7:1.8;
+    if(hasHL&&!isHL){ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fillStyle='rgba(33,38,45,0.35)';ctx.fill();return;}
+    if(data.role==='hub'){
+      const gr=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r*2);
+      gr.addColorStop(0,'rgba(240,136,62,0.12)');gr.addColorStop(1,'transparent');
+      ctx.beginPath();ctx.arc(p.x,p.y,r*2,0,Math.PI*2);ctx.fillStyle=gr;ctx.fill();
+    }
+    ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    ctx.fillStyle=data.role==='hub'?(isSel?'#fbbf24':'#f0883e'):(isSel?'#58a6ff':'rgba(139,148,158,0.45)');
+    ctx.fill();
+    if(isSel||isHov){ctx.strokeStyle='#fff';ctx.lineWidth=1.5/camScale;ctx.stroke();}
+    if(isSel||isHL||isHov||data.role==='hub'||camScale>3){
+      const fs=Math.max(6,Math.min(10,9*(data.role==='hub'?1.1:1)));
+      ctx.font=`${data.role==='hub'?'600':'400'} ${fs}px 'JetBrains Mono',monospace`;
+      ctx.fillStyle=(hasHL&&!isHL)?'rgba(139,148,158,0.12)':'rgba(230,237,243,0.85)';
+      ctx.textAlign='center';ctx.fillText(name,p.x,p.y-r-3);
+    }
+  });
+}
+
+function drawCurve(p1,p2,weight,dir){
+  const alpha=0.12+(weight/maxEdgeW)*0.5;
+  const lw=0.6+(weight/maxEdgeW)*3;
+  const dx=p2.x-p1.x,dy=p2.y-p1.y,dist=Math.sqrt(dx*dx+dy*dy)||1;
+  const curve=dist*0.12;
+  const cpx=(p1.x+p2.x)/2+(dy/dist)*curve*dir*0.4;
+  const cpy=(p1.y+p2.y)/2-(dx/dist)*curve*dir*0.4;
+  ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.quadraticCurveTo(cpx,cpy,p2.x,p2.y);
+  ctx.strokeStyle=`rgba(88,166,255,${alpha})`;ctx.lineWidth=lw;ctx.stroke();
+  const t=0.88;
+  const ax=(1-t)*(1-t)*p1.x+2*(1-t)*t*cpx+t*t*p2.x;
+  const ay=(1-t)*(1-t)*p1.y+2*(1-t)*t*cpy+t*t*p2.y;
+  const ang=Math.atan2(p2.y-ay,p2.x-ax);
+  const aS=4+lw*1.5;
+  ctx.beginPath();ctx.moveTo(p2.x,p2.y);
+  ctx.lineTo(p2.x-aS*Math.cos(ang-0.35),p2.y-aS*Math.sin(ang-0.35));
+  ctx.lineTo(p2.x-aS*Math.cos(ang+0.35),p2.y-aS*Math.sin(ang+0.35));
+  ctx.closePath();ctx.fillStyle=`rgba(88,166,255,${alpha*1.2})`;ctx.fill();
+}
+
+// ══════════════════════════════════
+//  INTERACTION — pan & zoom for ALL views
+// ══════════════════════════════════
+function initInteraction(){
+  // ZOOM — works in all views
+  canvas.addEventListener('wheel',function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    const rect=canvas.getBoundingClientRect();
+    const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+    const factor=e.deltaY<0?1.12:1/1.12;
+    // Zoom toward mouse position
+    camX=mx-(mx-camX)*factor;
+    camY=my-(my-camY)*factor;
+    camScale*=factor;
+    draw();
+    return false;
+  },{passive:false});
+
+  // PAN — works in all views
+  canvas.addEventListener('mousedown',e=>{
+    const node=hitTest(e);
+    if(node){ selectNode(node); return; }
+    dragging=true;
+    dragLastX=e.clientX;
+    dragLastY=e.clientY;
+    canvas.style.cursor='grabbing';
+  });
+
+  canvas.addEventListener('mousemove',e=>{
+    if(dragging){
+      const dx=e.clientX-dragLastX, dy=e.clientY-dragLastY;
+      camX+=dx; camY+=dy;
+      dragLastX=e.clientX; dragLastY=e.clientY;
+      draw();
+      return;
+    }
+    const prev=hoverNode;
+    hoverNode=hitTest(e);
+    canvas.style.cursor=hoverNode?'pointer':'grab';
+    if(hoverNode)showTooltip(e,hoverNode); else hideTooltip();
+    if(prev!==hoverNode)draw();
+  });
+
+  canvas.addEventListener('mouseup',()=>{dragging=false;canvas.style.cursor='grab';});
+  canvas.addEventListener('mouseleave',()=>{dragging=false;hoverNode=null;hideTooltip();canvas.style.cursor='grab';});
+
+  canvas.addEventListener('dblclick',()=>{
+    fitToWorld();
+    highlightedNodes.clear();highlightedEdges.clear();
+    draw();
+  });
+
+  // Touch support
+  let lastTouchDist=0, lastTouchX=0, lastTouchY=0;
+  canvas.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    if(e.touches.length===1){
+      dragging=true;
+      dragLastX=e.touches[0].clientX;
+      dragLastY=e.touches[0].clientY;
+    }else if(e.touches.length===2){
+      dragging=false;
+      const dx=e.touches[0].clientX-e.touches[1].clientX;
+      const dy=e.touches[0].clientY-e.touches[1].clientY;
+      lastTouchDist=Math.sqrt(dx*dx+dy*dy);
+      lastTouchX=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      lastTouchY=(e.touches[0].clientY+e.touches[1].clientY)/2;
+    }
+  },{passive:false});
+
+  canvas.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(e.touches.length===1&&dragging){
+      const dx=e.touches[0].clientX-dragLastX,dy=e.touches[0].clientY-dragLastY;
+      camX+=dx;camY+=dy;
+      dragLastX=e.touches[0].clientX;dragLastY=e.touches[0].clientY;
+      draw();
+    }else if(e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX;
+      const dy=e.touches[0].clientY-e.touches[1].clientY;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      const mx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      const my=(e.touches[0].clientY+e.touches[1].clientY)/2;
+      const rect=canvas.getBoundingClientRect();
+      const cx=mx-rect.left,cy=my-rect.top;
+      if(lastTouchDist>0){
+        const factor=dist/lastTouchDist;
+        camX=cx-(cx-camX)*factor;
+        camY=cy-(cy-camY)*factor;
+        camScale*=factor;
+      }
+      // Also pan
+      camX+=mx-lastTouchX;camY+=my-lastTouchY;
+      lastTouchDist=dist;lastTouchX=mx;lastTouchY=my;
+      draw();
+    }
+  },{passive:false});
+
+  canvas.addEventListener('touchend',e=>{
+    if(e.touches.length<2)lastTouchDist=0;
+    if(e.touches.length===0)dragging=false;
+  });
+}
+
+function hitTest(e){
+  const rect=canvas.getBoundingClientRect();
+  const sx=e.clientX-rect.left, sy=e.clientY-rect.top;
+  const w=screenToWorld(sx,sy);
+  let best=null,bestD=Infinity;
+  for(const [name,p] of Object.entries(worldPositions)){
+    if(name[0]==='_')continue;
+    const dx=w.x-p.x,dy=w.y-p.y,d=Math.sqrt(dx*dx+dy*dy);
+    const data=G.nodes[name];
+    const hitR=(data&&data.role==='hub'?15:10)/camScale+2;
+    if(d<hitR&&d<bestD){best=name;bestD=d;}
+  }
+  return best;
+}
+
+function showTooltip(e,node){
+  const tt=document.getElementById('tooltip');
+  const d=G.nodes[node];
+  tt.innerHTML=`<div class="tt-gene">${node} <span class="tag ${d.role}">${d.role} #${d.rank}</span></div>
+    <div class="tt-row">Out: ${d.outDeg} edges · w=${d.outW.toFixed(3)}<br>In: ${d.inDeg} edges · w=${d.inW.toFixed(3)}</div>`;
+  tt.style.display='block';
+  const rect=canvas.getBoundingClientRect();
+  tt.style.left=(e.clientX-rect.left+14)+'px';
+  tt.style.top=(e.clientY-rect.top-10)+'px';
+}
+function hideTooltip(){document.getElementById('tooltip').style.display='none';}
+
+// ── Selection ──
+function selectNode(name){
+  selectedNode=name;
+  highlightedNodes.clear();highlightedEdges.clear();
+  highlightedNodes.add(name);
+  (G.adjOut[name]||[]).forEach(e=>highlightedNodes.add(e.target));
+  (G.adjIn[name]||[]).forEach(e=>highlightedNodes.add(e.source));
+  G.edges.forEach(e=>{if(e.source===name||e.target===name)highlightedEdges.add(e.idx);});
+  if(currentView==='ego')layoutEgo(name);
+  draw();
+  showGeneInfo(name);
+}
+
+function showGeneInfo(name){
+  const d=G.nodes[name];if(!d)return;
+  let h=`<div class="gene-detail"><div class="gene-detail-name">${name} <span class="tag ${d.role}">${d.role} #${d.rank}</span></div>
+    <div class="gene-detail-stats">
+      <div class="gd-stat"><span class="gd-label">OUT edges</span><span class="gd-val out-c">${d.outDeg}</span></div>
+      <div class="gd-stat"><span class="gd-label">OUT weight</span><span class="gd-val out-c">${d.outW.toFixed(3)}</span></div>
+      <div class="gd-stat"><span class="gd-label">IN edges</span><span class="gd-val in-c">${d.inDeg}</span></div>
+      <div class="gd-stat"><span class="gd-label">IN weight</span><span class="gd-val in-c">${d.inW.toFixed(3)}</span></div>
+    </div></div>`;
+  const down=(G.adjOut[name]||[]).sort((a,b)=>b.weight-a.weight);
+  if(down.length){h+=`<div class="result-header">↓ Downstream (${down.length})</div>`;
+    down.forEach(e=>{const t=G.nodes[e.target];
+      h+=`<div class="result-item" onclick="selectNode('${e.target}')"><span class="gene-name">${e.target}</span><span class="tag ${t.role}">${t.role}</span><span class="metric">w=${e.weight.toFixed(4)}</span></div>`;
+    });
+  }
+  const up=(G.adjIn[name]||[]).sort((a,b)=>b.weight-a.weight);
+  if(up.length){h+=`<div class="result-header">↑ Upstream (${up.length})</div>`;
+    up.forEach(e=>{const s=G.nodes[e.source];
+      h+=`<div class="result-item" onclick="selectNode('${e.source}')"><span class="gene-name">${e.source}</span><span class="tag ${s.role}">${s.role}</span><span class="metric">w=${e.weight.toFixed(4)}</span></div>`;
+    });
+  }
+  document.getElementById('results').innerHTML=h;
+}
+
+// ── Queries ──
+function getN(id){return Math.max(1,parseInt(document.getElementById(id).value)||10);}
+
+function queryHubs(n){
+  const s=Object.entries(G.nodes).sort((a,b)=>b[1].outW-a[1].outW).slice(0,n);
+  highlightedNodes.clear();highlightedEdges.clear();
+  s.forEach(([nm])=>highlightedNodes.add(nm));draw();
+  let h=`<div class="result-header">Top ${n} Hub Genes</div>`;
+  s.forEach(([nm,d])=>{h+=`<div class="result-item" onclick="selectNode('${nm}')"><span class="gene-name">#${d.rank} ${nm}</span><span class="tag hub">hub</span><span class="metric">out=${d.outDeg} w=${d.outW.toFixed(2)}</span></div><div class="degree-bar"><div class="degree-bar-fill out" style="width:${(d.outW/maxOutW*100).toFixed(0)}%"></div></div>`;});
+  document.getElementById('results').innerHTML=h;
+}
+function querySpokes(n){
+  n=n||20;
+  const s=Object.entries(G.nodes).sort((a,b)=>b[1].inW-a[1].inW).slice(0,n);
+  highlightedNodes.clear();highlightedEdges.clear();s.forEach(([nm])=>highlightedNodes.add(nm));draw();
+  let h=`<div class="result-header">Top ${n} Most Regulated</div>`;
+  s.forEach(([nm,d])=>{h+=`<div class="result-item" onclick="selectNode('${nm}')"><span class="gene-name">${nm}</span><span class="tag ${d.role}">${d.role}</span><span class="metric">in=${d.inDeg} w=${d.inW.toFixed(2)}</span></div><div class="degree-bar"><div class="degree-bar-fill in" style="width:${(d.inW/maxInW*100).toFixed(0)}%"></div></div>`;});
+  document.getElementById('results').innerHTML=h;
+}
+function queryTopEdges(n){
+  n=n||25;
+  const s=[...G.edges].sort((a,b)=>b.weight-a.weight).slice(0,n);
+  highlightedNodes.clear();highlightedEdges.clear();
+  s.forEach(e=>{highlightedNodes.add(e.source);highlightedNodes.add(e.target);highlightedEdges.add(e.idx);});draw();
+  let h=`<div class="result-header">Top ${n} Strongest Edges</div>`;
+  s.forEach(e=>{h+=`<div class="result-item"><span class="gene-name" onclick="selectNode('${e.source}')" style="cursor:pointer">${e.source}</span><span class="arrow-sep">→</span><span class="gene-name" onclick="selectNode('${e.target}')" style="cursor:pointer">${e.target}</span><span class="metric">w=${e.weight.toFixed(4)}</span></div>`;});
+  document.getElementById('results').innerHTML=h;
+}
+function queryStats(){
+  const N=Object.keys(G.nodes).length,E=G.edges.length;
+  const hubs=Object.values(G.nodes).filter(n=>n.role==='hub').length;
+  const ow=Object.values(G.nodes).map(n=>n.outW),iw=Object.values(G.nodes).map(n=>n.inW),ew=G.edges.map(e=>e.weight);
+  const mean=a=>a.reduce((s,v)=>s+v,0)/a.length;
+  const med=a=>{const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+  highlightedNodes.clear();highlightedEdges.clear();draw();
+  const stats=[['Nodes',N],['Edges',E],['Hubs (top 10%)',hubs],['Spokes',N-hubs],['Density',(E/(N*(N-1))).toFixed(6)],['Mean out-w',mean(ow).toFixed(4)],['Max out-w',Math.max(...ow).toFixed(4)],['Mean edge-w',mean(ew).toFixed(4)],['Median edge-w',med(ew).toFixed(4)],['Max edge-w',Math.max(...ew).toFixed(4)]];
+  let h=`<div class="result-header">Graph Statistics</div>`;
+  stats.forEach(([l,v])=>{h+=`<div class="result-item"><span style="color:var(--text2)">${l}</span><span class="metric">${v}</span></div>`;});
+  document.getElementById('results').innerHTML=h;
+}
+
+// ── Search ──
+document.getElementById('searchBox').addEventListener('input',e=>{
+  const q=e.target.value.toUpperCase().trim();
+  if(!q){highlightedNodes.clear();highlightedEdges.clear();draw();return;}
+  const m=Object.keys(G.nodes).filter(n=>n.toUpperCase().includes(q));
+  highlightedNodes=new Set(m);highlightedEdges.clear();draw();
+  if(!m.length){document.getElementById('results').innerHTML=`<div class="result-sub">No match</div>`;return;}
+  if(m.length===1){selectNode(m[0]);return;}
+  let h=`<div class="result-header">${m.length} matches</div>`;
+  m.sort((a,b)=>G.nodes[b].outW-G.nodes[a].outW).forEach(nm=>{const d=G.nodes[nm];
+    h+=`<div class="result-item" onclick="selectNode('${nm}')"><span class="gene-name">${nm}</span><span class="tag ${d.role}">${d.role} #${d.rank}</span><span class="metric">out=${d.outDeg}</span></div>`;});
+  document.getElementById('results').innerHTML=h;
+});
+
+// ── Weight Filter ──
+document.getElementById('weightFilter').addEventListener('input',e=>{
+  weightFilterValue=(parseInt(e.target.value)/100)*maxEdgeW;
+  document.getElementById('weightVal').textContent=weightFilterValue.toFixed(2);
+  if(currentView==='full'){layoutFull();draw();}
+});
+
+// ── Init ──
+initCanvas();
+initInteraction();
+</script>
+</body>
+</html>
