@@ -4,7 +4,7 @@ Interactive browser-based tool for visualizing and querying gene dependency grap
 
 ## Quick Start
 
-1. Visit the [live site](https://achieve-lab.github.io/gene-graph-explorer/) (or open `index.html` locally)
+1. Visit the [live site](https://alfbarbaro.github.io/gene-graph-explorer/) (or open `index.html` locally)
 2. Click the upload area (top left) and load a CSV from `sample_graphs/`
 3. The app automatically selects the top hub gene — start exploring
 
