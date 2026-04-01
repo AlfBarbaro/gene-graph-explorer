@@ -12,9 +12,12 @@ Interactive browser-based tool for visualizing and querying gene dependency grap
 
 | File | Description |
 |------|-------------|
-| `sample_graphs/adata_10000genes.csv` | Graph built from the full adata dataset using XGBoost (top 10k HVGs) |
+| `adata_10000genes.csv` | Full adata dataset, top 10k most variable genes |
+| `adata_full_allgenes.csv` | Full adata dataset, all genes (no HVG filter) |
+| `mini_perturb_allgenes.csv` | Mini perturb dataset, all genes |
+| `adata_split50_allgenes.csv` | 50% random split of adata, all genes |
 
-Each CSV is an edge list (`source, target, weight`). Each row is a directed edge: the source gene's expression was a strong predictor of the target gene's expression under perturbation, as measured by normalized XGBoost feature gain.
+All files are in `sample_graphs/`. Each CSV is an edge list (`source, target, weight`). Each row is a directed edge: the source gene's expression was a strong predictor of the target gene's expression under perturbation, as measured by normalized XGBoost feature gain.
 
 ## Views
 
